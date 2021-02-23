@@ -1,0 +1,165 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# (c) 2014-2021 Hartwig Deneke (deneke@tropos.de)
+#
+# This file is part of the TROSAT EUMETCAST reception utilities 
+# developed at TROPOS.
+#
+# TROSAT is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+import os, sys
+import gzip
+import io
+import datetime as dt
+import re
+import fileinput
+import argparse
+import itertools
+
+from trosat import msevi as ms
+
+# dictionary used for storing the scan period for the different scan services
+scan_period = {
+    'pzs'  : dt.timedelta(seconds=900),
+    'rss'  : dt.timedelta(seconds=300),
+    'iodc' : dt.timedelta(seconds=900)
+}
+
+def parse_args():
+    '''
+    Parse command line arguments
+    '''
+
+    # create argument parser
+    arg_parser = argparse.ArgumentParser( description='Identify gaps in MSG SEVIRI L15 HRIT archive, based on segmask input', add_help=True)
+
+    # add optional arguments
+    arg_parser._optionals.title = 'Optional arguments'
+    arg_parser.add_argument('-s', '--scan', default=None, dest='svc', choices=['pzs','rss','iodc'], help='the scan service of the '    \
+                            'MSG data stream (default=None, try to guess.)')
+    arg_parser.add_argument('-I', '--incomplete', action='store_true', help='do not consider incomplete scans as part of gaps')
+    arg_parser.add_argument('-Z', '--gzip', action='store_true', help='compress input/output using gzip (ignored for stdin/stdout)')
+    arg_parser.add_argument('-A', '--archive', action='store_true', default=False, help='archive mode: read from/write to archive default locations')
+
+    grp  = arg_parser.add_argument_group('Input/output specification')
+    grp.add_argument('-o', '--output', type=str, default=None, help='the output file (default=stdout)')
+    grp.add_argument('-i', '--input', type=str, default=None, nargs='+', help='input files containing segmasks (default=stdin)')
+
+    # use mutually exclusive group for date options
+    grp  = arg_parser.add_argument_group('Time period specification (mutually exclusive)')
+    grp  = grp.add_mutually_exclusive_group( required=False )
+    grp.add_argument('-d','--date', help='show gaps for given date (format YYYY-MM-DD)', default=None)
+    grp.add_argument('-y','--year', help='show gaps for given year (format YYYY)', default=None)
+    grp.add_argument('-m','--month', help='show gaps for given month (format YYYY-MM)', default=None)
+
+    # move optional group to end
+    opt_grp = arg_parser._action_groups.pop(0)
+    arg_parser._action_groups.append(opt_grp)
+
+    # now parse the arguments
+    args = arg_parser.parse_args()
+
+    # set start/end date if time period specified
+    if args.date!=None:
+        args.start_time = dt.datetime.strptime(args.date,"%Y-%m-%d")
+        args.end_time   = args.start_time+dt.timedelta(days=1)
+    elif args.month!=None:
+        args.start_time = dt.datetime.strptime(args.month+"-01", "%Y-%m-%d")
+        args.end_time   = (args.start_time+dt.timedelta(days=31)).replace(day=1)
+    elif args.year!=None:
+        yy = int(args.year)
+        args.start_time = dt.datetime(yy,1,1)
+        args.end_time   = dt.datetime(yy+1,1,1)
+    else:
+        args.start_time = None
+        args.end_time   = None
+
+    if not args.output:
+        args.output =  sys.stdout
+    else:
+        args.output =  gzip.open(args.output, mode='wt') if args.gzip else  open(args.output, mode='w')
+
+    return args
+
+def print_gap(start, end, svc, ofile):
+    '''
+    Print gap information
+    '''
+    delta = scan_period[svc]
+    n = int((end-start).total_seconds()) // int(delta.total_seconds()) + 1
+    s = '{0:%Y-%m-%d %H:%M}   {1:%Y-%m-%d %H:%M}   {2}   {3:6d}'.format(start, end, svc, n)
+    print(s, file=ofile)
+    return
+
+
+def segmask_generator(lines, start=None, end=None, skip_incomplete=False):
+    # create segmask generator
+    gen = (ms.segmask.fromstring(l) for l in lines)
+    # skip entries before time start
+    if start: gen = itertools.dropwhile(lambda t: t.time<start, gen)
+    # break after reaching end time
+    if end:   gen = itertools.takewhile(lambda t: t.time<end, gen)
+    # skip incomplete segmasks
+    if skip_incomplete: gen = filter(lambda sm: sm.is_complete()==True, gen)
+    return gen
+
+
+if __name__ == '__main__':
+
+    # parse command line arguments
+    param = parse_args()
+
+    # create generator for iterating over segmasks
+    finput = fileinput.input(files=param.input if param.input else ('-',))
+    smgen = segmask_generator(finput, start=param.start_time, end=param.end_time, skip_incomplete=param.incomplete==False)
+
+    # get first record
+    try:
+        segmsk = next(smgen)
+    except StopIteration:
+        # no data available for period, try to output something meaningful
+        if param.svc and param.start_time and param.end_time:
+            print_gap(param.start_time, param.end_time-delta, param.svc, param.output)
+        else:
+            start = param.start_time.strftime('%Y-%m-%d %H:%M') if param.start_time else '****-**-** **:**'
+            end   = param.start_time.strftime('%Y-%m-%d %H:%M') if param.start_time else '****-**-** **:**'
+            svc   = param.svc if param.svc else '***'
+            print('{0}   {1}   {2}       -1'.format(start,end, svc), file=param.output)
+        sys.exit(-1)
+
+    # guess scan service if not set
+    if param.svc is None:
+        param.svc = segmsk.svc
+
+    # get scan period
+    delta = scan_period[param.svc]
+
+    # 1. do we need to report gap at start of period?
+    if param.start_time and segmsk.time>param.start_time:
+        print_gap(param.start_time, segmsk.time-delta, param.svc, param.output)
+
+    # 2. report gaps between start_time and end_time
+    last_segmsk = segmsk
+    for segmsk in smgen:
+        assert param.svc==segmsk.svc, 'scan service does not match'
+        if (segmsk.time-last_segmsk.time)>=2*delta:
+            print_gap(last_segmsk.time+delta, segmsk.time-delta, param.svc, param.output)
+        last_segmsk = segmsk
+
+    # 3. do we need to report gap at end of period?
+    if param.end_time and segmsk.time<(param.end_time-delta):
+        print_gap(segmsk.time+delta, param.end_time-delta, param.svc, param.output)
+
+    sys.exit(0)

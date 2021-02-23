@@ -1,0 +1,187 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# (c) 2014-2021 Hartwig Deneke (deneke@tropos.de)
+#
+# This file is part of the TROSAT EUMETCAST reception utilities 
+# developed at TROPOS.
+#
+# TROSAT is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+import os, sys
+import gzip
+import io
+import datetime as dt
+import re
+import fileinput
+import argparse
+import itertools
+from operator import itemgetter
+import pathlib
+import tqdm
+
+import trosat.pathutil as pu
+from trosat import msevi as ms
+import tarfile
+import gzip
+
+#start = dt.date(2020,11,1)
+#end   = dt.date(2020,11,28)
+
+#svc = 'rss'
+
+#fnmatch = pu.PathMatcher('(?P<sat>msg\d)-sevi-(?P<time>\d{8}t\#l15har_re = '(?P<sat>msg\d)-sevi-(?P<time>\d{8}t\d{4}z)-l15hrit-(?P<svc>\w+).(?P<col>c\d).tar$'
+
+#fnmatch = pu.PathMatcher(l15har_re, full=True, pathmap=os.path.basename,  
+#d{4}z)-l15hrit-(?P<svc>\w).(?P<cl>c\d).tar')
+
+#top_dir = dir_fmt(svc='rss')
+#print(top_dir)
+
+
+# def l15har_dir_tree(start, end, svc):
+#     cur_date = start
+#     while cur_date<end:
+#         dir_ = dir_fmt(date=cur_date, svc=svc) 
+#         if dir_.exists() and dir_.is_dir():
+#             yield dir_
+#         cur_date += dt.timedelta(days=1)
+
+# for dir_ in l15har_dir_tree(start,end,svc):
+#     mlist = [m for m in map(fnmatch, os.listdir(dir_)) if m]
+#     n = len(mlist)
+#     if n>0:
+#         mlist = sorted(mlist, key=attrgetter('time','svc','sat'))
+#         for m in mlist:
+#             p = os.path.join(dir_,m._path)
+#             f = tarfile.open(p,'r')
+#             hlist = [m for m in map(ms.io.l15hrit.fnmatch, f.getnames()) if m]
+
+
+def parse_args():
+    '''
+    Parse command line arguments
+    '''
+
+    # create argument parser
+    arg_parser = argparse.ArgumentParser(description='Create segmasks for MSG SEVIRI L15 HRIT archive', add_help=True)
+    
+    # use mutually exclusive group for date options
+    grp  = arg_parser.add_argument_group('Time period specification (mutually exclusive)')
+    grp  = grp.add_mutually_exclusive_group( required=False )
+    grp.add_argument('-d','--date',  help='create segmasks for given date (format YYYY-MM-DD)', default=None)
+    grp.add_argument('-y','--year',  help='create segmasks for given year (format YYYY)', default=None)
+    grp.add_argument('-m','--month', help='create segmasks for given month (format YYYY-MM)', default=None)
+
+    # add optional arguments
+    arg_parser._optionals.title = 'Optional arguments'
+    arg_parser.add_argument('-s', '--scan', default='pzs', dest='svc', choices=['pzs','rss','iodc'], \
+                            help='the scan service of the MSG data stream (default=pzs)')
+    arg_parser.add_argument('-Z', '--gzip', action='store_true', help='compress input/output using gzip (ignored for stdin/stdout)')
+    arg_parser.add_argument('-A', '--archive', action='store_true', default=False, help='archive mode: read from/write to archive default locations')
+
+    # now parse the arguments
+    args = arg_parser.parse_args()
+
+    # set start/end date if time period specified
+    if args.date!=None:
+        args.start_time = dt.datetime.strptime(args.date, "%Y-%m-%d")
+        args.end_time   = args.start_time+dt.timedelta(days=1)
+    elif args.month!=None:
+        args.start_time = dt.datetime.strptime(args.month+"-01", "%Y-%m-%d")
+        args.end_time   = (args.start_time+dt.timedelta(days=31)).replace(day=1)
+    elif args.year!=None:
+        yy = int(args.year)
+        args.start_time = dt.datetime(yy,1,1)
+        args.end_time   = dt.datetime(yy+1,1,1)
+    else:
+        args.start_time = None
+        args.end_time   = None
+    return args
+
+def l15har_fnsort(flist):
+    regex = '(?P<sat>msg\d)-sevi-(?P<time>\d{8}t\d{4}z)-l15hrit-(?P<svc>\w+).(?P<col>c\d).tar$'
+    keygetter = itemgetter('time', 'svc', 'sat')
+    key_fn_list = ((keygetter(m),fn) for m,fn in zip( (re.fullmatch(regex, f) for f in flist), flist) if m)
+    return [fn for _,fn in sorted(key_fn_list, key=lambda x:x[0])]
+
+
+def walk_l15har(start, end, svc):
+    '''
+    '''
+    dir_fmt = pu.PathFormatter('${EUMCST_ROOT}/msevi_{svc}/l15_hrit/{date:%Y/%m/%d}')
+    date = start
+    while date<end:
+        dir_ = dir_fmt(date=date, svc=svc)
+        if dir_.exists():
+            flist = os.listdir(dir_)
+            print(dir_, len(flist))
+            yield from (os.path.join(dir_, f) for f in l15har_fnsort(flist))
+        date = date + dt.timedelta(days=1)
+    
+def write_l15segmask_file(fpath, segmsks, gzip=False):
+
+    # Test if directory exists, otherwise create it
+    print(fpath.parent)
+    fdir  = fpath.parent
+    if not (fdir.exists() and fdir.is_dir()):
+        fdir.mkdir(parents=True, exist_ok=True)
+    f = gz.open(fpath, 'wt') if gzip else open(fpath, 'wt')
+    for sm in segmsks:
+        f.write(str(sm)+'\n')
+    f.close()
+    return        
+    
+if __name__ == '__main__':
+
+    # parse command line arguments
+    args = parse_args()
+
+    # Ensure that $EUMCST_ROOT is set, by setting to default location 
+    if not 'EUMCST_ROOT':
+        os.environ['EUMCST_ROOT'] = '/vols/satellite/datasets/eumcst'
+    
+    # 
+    # while date<args.end_time.date():
+    #     dir_ = dir_fmt(svc=args.svc,date=date)
+    #     flist = l15har_fnsort(os.listdir(dir_))
+    #     if len(flist)>0:
+    #         smlist = [  ms.io.l15har.get_segmask( os.path.join(dir_,f) ) for f in flist]
+    #         write_segmsk_file(smlist)
+    #     date = date + dt.timedelta(days=1)
+    #g = itemgetter('time', 'svc')
+    #for dir_, flist in walk_l15har(args.start_time.date(), args.end_time.date(), args.svc, sort=True):
+    #    time,svc = g(flist[0])
+    #sm_iter = ( ms.io.l15har.get_segmask(f) for f in walk_l15har(args.start_time.date(), args.end_time.date(), args.svc))
+    #for (date,svc), smlist in  itertools.groupby( , )
+
+    fpath_fmt = pu.PathFormatter('${EUMCST_ROOT}/msevi_{svc}/meta/segmsk/{date:%Y/%m}/msevi_{date:%Y-%m-%d}_l15segmsk_{svc}.dat')
+    segmsk_iter = (ms.io.l15har.get_segmask(f) for f in walk_l15har(args.start_time.date(), args.end_time.date(), args.svc))
+    for (date,svc), segmsks in itertools.groupby(segmsk_iter, key=lambda sm: (sm.time.date(),sm.svc)):
+        print('Date: ', date)
+        segmsks = list(segmsks)
+        fpath = fpath_fmt.format(date=date, svc=svc)
+        print('Writing: ', fpath.name)
+        write_l15segmask_file(fpath, segmsks)
+    #for (date,svc), segmsk_iter in itertools.groupby((ms.segmask.fromstring(line) for line in f), lambda sm: (sm.time.date(),sm.svc)):
+    #fpath = segmsk_fpath_fmt(date=date, svc=svc)
+    #    fdir  = fpath.parent
+    #    if not (fdir.exists() and fdir.is_dir()):
+    #        fdir.mkdir(parents=True,exist_ok=True)
+    #    f = gzip.open(fpath,'wt') if  args.gzip else open(fpath,'w')
+    #    for sm in segmsk_iter:
+    #        f.write(str(sm)+'\n')
+    #    f.close()
+    
+        

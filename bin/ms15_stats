@@ -1,0 +1,202 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# (c) 2014-2021 Hartwig Deneke (deneke@tropos.de)
+#
+# This file is part of the TROSAT MSG SEVIRI reception utilities
+# developed at TROPOS.
+#
+# TROSAT is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+import os, sys
+import datetime as dt, pytz
+import re
+import fileinput
+import argparse
+import itertools
+from operator import itemgetter
+
+from trosat import msevi as ms
+
+hdr_str = '# Date       #Files      [%]   #Scans      [%]  #Complt      [%]'
+sep_str = '################################################################'
+fmt_str = '{0:10s} {1:8d} {2:8.2f} {3:8} {4:8.2f} {5:8} {6:8.2f}'
+
+
+def parse_args():
+    '''
+    Parse command line arguments
+    '''
+    
+    # create argument parser
+    arg_parser = argparse.ArgumentParser( description='Generate completeness statistics for MSG SEVIRI ' \
+                                          'L15 HRIT archive, based on segmask input', add_help=True      ) 
+
+    # use mutually exclusive group for date options
+    grp  = arg_parser.add_argument_group('Time period specification (mutually exclusive)')
+    grp  = grp.add_mutually_exclusive_group( required=True )
+    grp.add_argument('-d','--date', help='show gaps for given date (format YYYY-MM-DD)', default=None)
+    grp.add_argument('-y','--year', help='show gaps for given year (format YYYY)', default=None)
+    grp.add_argument('-m','--month', help='show gaps for given month (format YYYY-MM)', default=None)
+
+    # now parse the arguments
+    args = arg_parser.parse_args()
+    
+    # set start/end date if time period specified
+    if args.date!=None:
+        args.start_time = dt.datetime.strptime(args.date,"%Y-%m-%d")
+        args.end_time   = args.start_time+dt.timedelta(days=1)
+    elif args.month!=None:
+        args.start_time = dt.datetime.strptime(args.month+"-01", "%Y-%m-%d")
+        args.end_time   = (args.start_time+dt.timedelta(days=31)).replace(day=1)
+    elif args.year!=None:
+        yy = int(args.year)
+        args.start_time = dt.datetime(yy,1,1)
+        args.end_time   = dt.datetime(yy+1,1,1)
+    else:
+        args.start_time = None
+        args.end_time   = None
+
+    args.svc = None
+
+    return args
+
+
+#arg_parser = argparse.ArgumentParser(description='Report completeness statistics for MSG SEVIRI L15 HRIT archive')
+#grp = arg_parser.add_mutually_exclusive_group(required=True)
+#grp.add_argument('-d','--date',help='date', default=None)
+#grp.add_argument('-y','--year',help='year', default=None)
+#grp.add_argument('-m','--month',help='month', default=None)
+
+# parse arguments
+# args = arg_parser.parse_args()
+# print '#'*64
+# if args.date!=None:
+#     start = datetime.datetime.strptime(args.date[0:10],'%Y-%m-%d').replace(tzinfo=pytz.UTC)
+#     end = start+datetime.timedelta(days=1)
+# elif args.month!=None:
+#     start = datetime.datetime.strptime(args.month,'%Y-%m').replace(tzinfo=pytz.UTC)
+#     if start.month<12:
+#         end = start.replace(month=start.month+1)
+#     else:
+#         end = start.replace(year=start.year+1,month=1)
+#     print '# Monthly reception statistics:{0:%B %Y}'.format(start)
+# elif args.year!=None:
+#     start = datetime.datetime.strptime(args.year,'%Y').replace(tzinfo=pytz.UTC)
+#     end = start.replace(year=start.year+1)
+#     print '# Yearly reception statistics: {0:%Y}'.format(start)
+# print '# Date       #Files      [%]   #Slots      [%]  #Complt      [%]'
+# print '#'*64
+
+class ms15_stats(object):
+
+    def __init__(self):
+        self.nr_files    = 0
+        self.nr_scans    = 0
+        self.nr_complete = 0
+        return
+
+    def add_segmask(self, segmsk):
+        self.nr_scans += 1
+        if segmsk.is_complete():
+            self.nr_complete += 1
+        self.nr_files += segmsk.nr_files()
+
+    def tostring(self, date, svc):
+        if svc=='rss':
+            nscans = 288
+            nfiles = 44
+        else:
+            nscans =  96
+            nfiles = 114
+        return fmt_str.format( date, self.nr_files, 100.0*self.nr_files/(nfiles*nscans), \
+                               self.nr_scans,  100*self.nr_scans/nscans,                 \
+                               self.nr_complete, 100.0*self.nr_complete/nscans           )
+
+        
+#cur_date = start.date()
+#day_stats = ms15_stats()
+#total_stats = ms15_stats()
+#svc = 'rss'
+
+#if svc=='rss':
+#    delta = datetime.timedelta(seconds=300)
+#    spd = 288
+#    fpd = spd*44
+#else:
+#    delta = datetime.timedelta(seconds=900)
+#    spd = 96
+#    fpd = 128
+
+def stats_str(datestr, st,nday=1):
+    nf = st.nr_files
+    ff = 100.0*nf/(fpd*nday)
+    ns = st.nr_slots
+    fs = 100.0*ns/(spd*nday)
+    nc = st.nr_complete
+    fc = 100.0*nc/(spd*nday)
+    return '{0:10} {1:8} {2:8.2f} {3:8} {4:8.2f} {5:8} {6:8.2f}'.format(datestr, nf, ff, ns, fs, nc, fc)
+
+def segmask_generator(lines, start=None, end=None, skip_incomplete=False):
+    # create segmask generator
+    gen = (ms.segmask.fromstring(l) for l in lines)
+    # skip entries before time start
+    if start: gen = itertools.dropwhile(lambda t: t.time<start, gen)
+    # break after reaching end time
+    if end:   gen = itertools.takewhile(lambda t: t.time<end, gen)
+    # skip incomplete segmasks
+    if skip_incomplete: gen = filter(lambda sm: sm.is_complete()==True, gen)
+    return gen
+
+if __name__ == '__main__':
+
+    # parse commandline arguments
+    param = parse_args()
+
+    # print header
+    print(sep_str+'\n'+hdr_str+'\n'+sep_str)
+
+    # create generator for segmasks, based on input
+    finput = fileinput.input(files=('-',))
+    sm_gen = segmask_generator(finput, start=param.start_time, end=param.end_time)
+
+    # iterate over segmask, grouping by date
+    cur_date = param.start_time.date()
+    svc = None
+
+    for sm_date, sm_iter in itertools.groupby(sm_gen, lambda sm: sm.time.date()):
+
+        # output statistics for missing data at start of period
+        while cur_date<sm_date:
+            date_str = format(cur_date, '%Y-%m-%d')
+            print(fmt_str.format(date_str, 0, 0.0, 0, 0.0, 0, 0.0), file=sys.stdout)
+            cur_date += dt.timedelta(days=1)
+        
+        day_stats = ms15_stats()
+        for sm in sm_iter:
+            if not svc:
+                svc = sm.svc
+            else:
+                assert svc==sm.svc, 'different scan service encountered'
+            day_stats.add_segmask(sm)
+        print(day_stats.tostring(format(cur_date,'%Y-%m-%d'), svc), file=sys.stdout)
+        cur_date = sm_date + dt.timedelta(days=1)
+    
+    # output statistics for missing data at end of period
+    while cur_date<param.end_time.date():
+        print(fmt_str.format(format(cur_date,'%Y-%m-%d'), 0, 0.0, 0, 0.0, 0, 0.0), file=sys.stdout)
+        cur_date = cur_date + dt.timedelta(days=1)
+    print(sep_str, file=sys.stdout)
+            
+         
