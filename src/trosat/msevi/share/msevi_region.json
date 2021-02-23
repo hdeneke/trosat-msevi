@@ -1,0 +1,13 @@
+{
+    "pzs": [
+	{ "name":"fd", "lin0":    0, "nlin": 3712,  "col0":    0, "ncol": 3712 },
+	{ "name":"eu", "lin0":  156, "nlin":  600,  "col0": 1556, "ncol":  800 },
+	{ "name":"nh", "lin0":   56, "nlin": 1800,  "col0":   56, "ncol": 3600 },
+	{ "name":"mt", "lin0": 606, "nlin": 1200,  "col0":   106, "ncol": 1600 }
+    ],
+    "rss": [
+	{ "name":"rs", "lin0":    0, "nlin": 1392,  "col0":    0, "ncol": 3712 },
+	{ "name":"eu", "lin0":  156, "nlin":  600,  "col0": 1356, "ncol":  800 },
+ 	{ "name":"de", "lin0":  216, "nlin":  240,  "col0": 1676, "ncol":  400 }
+   ]
+}

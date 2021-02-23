@@ -1,0 +1,77 @@
+{
+    "satellites": [
+	{
+	    "name" : "msg1",
+	    "long_name" : "Meteosat-8 (MSG1)",
+	    "id" : 321,
+	    "channel" : [
+		{ "name": "vis006", "id":  1, "lambda_c":  0.640200e-6, "f0": 65.2296 },
+		{ "name": "vis008", "id":  2, "lambda_c":  0.809200e-6, "f0": 73.0127 },
+		{ "name": "ir_016", "id":  3, "lambda_c":  1.640000e-6, "f0": 62.3715 },
+		{ "name": "ir_039", "id":  4, "lambda_c":  3.895097e-6, "nu_c": 2567.330, "alpha": 0.9956, "beta": 3.410, "f0": 15.4566},
+		{ "name": "wv_062", "id":  5, "lambda_c":  6.257419e-6, "nu_c": 1598.103, "alpha": 0.9962, "beta": 2.218 },
+		{ "name": "wv_073", "id":  6, "lambda_c":  7.341707e-6, "nu_c": 1362.081, "alpha": 0.9991, "beta": 0.478 },
+		{ "name": "ir_087", "id":  7, "lambda_c":  8.702698e-6, "nu_c": 1149.069, "alpha": 0.9996, "beta": 0.179 },
+		{ "name": "ir_097", "id":  8, "lambda_c":  9.667973e-6, "nu_c": 1034.343, "alpha": 0.9999, "beta": 0.060 },
+		{ "name": "ir_108", "id":  9, "lambda_c": 10.745213e-6, "nu_c":  930.647, "alpha": 0.9983, "beta": 0.625 },
+		{ "name": "ir_120", "id": 10, "lambda_c": 11.909582e-6, "nu_c":  839.660, "alpha": 0.9988, "beta": 0.397 },
+		{ "name": "ir_134", "id": 11, "lambda_c": 13.291032e-6, "nu_c":  752.387, "alpha": 0.9981, "beta": 0.578 },
+		{ "name": "hrv",    "id": 12, "lambda_c":  0.708200e-6, "f0": 78.7599 }
+	    ]
+	},{
+	    "name"    : "msg2",
+	    "long_name" : "Meteosat-9 (MSG2)",
+	    "id"      : 322,
+	    "channel" : [
+		{ "name": "vis006", "id":  1, "lambda_c":  0.640300e-6, "f0": 65.2065 },
+		{ "name": "vis008", "id":  2, "lambda_c":  0.808200e-6, "f0": 73.1869 },
+		{ "name": "ir_016", "id":  3, "lambda_c":  1.640000e-6, "f0": 61.9923 },
+		{ "name": "ir_039", "id":  4, "lambda_c":  3.895097e-6, "nu_c": 2568.832, "alpha": 0.9954, "beta": 3.438, "f0": 15.4566},
+		{ "name": "wv_062", "id":  5, "lambda_c":  6.257419e-6, "nu_c": 1600.548, "alpha": 0.9963, "beta": 2.185 },
+		{ "name": "wv_073", "id":  6, "lambda_c":  7.341707e-6, "nu_c": 1360.330, "alpha": 0.9991, "beta": 0.470 },
+		{ "name": "ir_087", "id":  7, "lambda_c":  8.702698e-6, "nu_c": 1148.620, "alpha": 0.9996, "beta": 0.179 },
+		{ "name": "ir_097", "id":  8, "lambda_c":  9.667973e-6, "nu_c": 1035.289, "alpha": 0.9999, "beta": 0.056 },
+		{ "name": "ir_108", "id":  9, "lambda_c": 10.745213e-6, "nu_c":  931.700, "alpha": 0.9983, "beta": 0.640 },
+		{ "name": "ir_120", "id": 10, "lambda_c": 11.909582e-6, "nu_c":  836.445, "alpha": 0.9988, "beta": 0.408 },
+		{ "name": "ir_134", "id": 11, "lambda_c": 13.291032e-6, "nu_c":  751.792, "alpha": 0.9981, "beta": 0.561 },
+		{ "name": "hrv",    "id": 12, "lambda_c":  0.708200e-6, "f0":  79.0113 }
+	    ]
+	},{
+	    "name"    : "msg3",
+	    "long_name" : "Meteosat-10 (MSG3)",
+	    "id"      : 323,
+	    "channel" : [
+		{ "name": "vis006", "id":  1, "lambda_c":  0.640300e-6, "f0": 65.5148 },
+		{ "name": "vis008", "id":  2, "lambda_c":  0.808200e-6, "f0": 73.1807 },
+		{ "name": "ir_016", "id":  3, "lambda_c":  1.640000e-6, "f0": 62.0208 },
+		{ "name": "ir_039", "id":  4, "lambda_c":  3.895097e-6, "nu_c": 2568.832, "alpha": 0.9915, "beta": 2.9002, "f0": 15.4566},
+		{ "name": "wv_062", "id":  5, "lambda_c":  6.257419e-6, "nu_c": 1600.548, "alpha": 0.9960, "beta": 2.0337 },
+		{ "name": "wv_073", "id":  6, "lambda_c":  7.341707e-6, "nu_c": 1360.330, "alpha": 0.9991, "beta": 0.4340 },
+		{ "name": "ir_087", "id":  7, "lambda_c":  8.702698e-6, "nu_c": 1148.620, "alpha": 0.9996, "beta": 0.1714 },
+		{ "name": "ir_097", "id":  8, "lambda_c":  9.667973e-6, "nu_c": 1035.289, "alpha": 0.9999, "beta": 0.0527 },
+		{ "name": "ir_108", "id":  9, "lambda_c": 10.745213e-6, "nu_c":  931.700, "alpha": 0.9983, "beta": 0.6084 },
+		{ "name": "ir_120", "id": 10, "lambda_c": 11.909582e-6, "nu_c":  836.445, "alpha": 0.9988, "beta": 0.3882 },
+		{ "name": "ir_134", "id": 11, "lambda_c": 13.291032e-6, "nu_c":  751.792, "alpha": 0.9982, "beta": 0.5390 },
+		{ "name": "hrv",    "id": 12, "lambda_c":  0.708200e-6, "f0":  78.9416 }
+	    ]
+	},{
+	    "name"    : "msg4",
+	    "long_name" : "Meteosat-11 (MSG4)",
+	    "id"      : 324,
+	    "channel" : [
+		{ "name": "vis006", "id":  1, "lambda_c":  0.640300e-6, "f0": 65.2656 },
+		{ "name": "vis008", "id":  2, "lambda_c":  0.808200e-6, "f0": 73.1692 },
+		{ "name": "ir_016", "id":  3, "lambda_c":  1.640000e-6, "f0": 61.9416 },
+		{ "name": "ir_039", "id":  4, "lambda_c":  3.895097e-6, "nu_c": 2555.280, "alpha": 0.9916, "beta": 2.9438, "f0": 15.4566},
+		{ "name": "wv_062", "id":  5, "lambda_c":  6.257419e-6, "nu_c": 1596.080, "alpha": 0.9959, "beta": 2.0780 },
+		{ "name": "wv_073", "id":  6, "lambda_c":  7.341707e-6, "nu_c": 1361.748, "alpha": 0.9990, "beta": 0.4929 },
+		{ "name": "ir_087", "id":  7, "lambda_c":  8.702698e-6, "nu_c": 1147.433, "alpha": 0.9996, "beta": 0.1731 },
+		{ "name": "ir_097", "id":  8, "lambda_c":  9.667973e-6, "nu_c": 1034.851, "alpha": 0.9998, "beta": 0.0597 },
+		{ "name": "ir_108", "id":  9, "lambda_c": 10.745213e-6, "nu_c":  931.122, "alpha": 0.9983, "beta": 0.6256 },
+		{ "name": "ir_120", "id": 10, "lambda_c": 11.909582e-6, "nu_c":  839.113, "alpha": 0.9988, "beta": 0.4002 },
+		{ "name": "ir_134", "id": 11, "lambda_c": 13.291032e-6, "nu_c":  748.585, "alpha": 0.9981, "beta": 0.5635 },
+		{ "name": "hrv",    "id": 12, "lambda_c":  0.708200e-6, "f0":  79.0035 }
+	    ]
+	}
+    ]
+}

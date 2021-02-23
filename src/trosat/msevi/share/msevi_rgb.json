@@ -1,0 +1,17 @@
+{
+    "airmass": {
+	    "red":   { "value": "btd", "args": ["wv_062","wv_073"], "min": -25.0, "max":   0.0, "gamma":1.0 },
+	    "green": { "value": "btd", "argschan": ["ir_097","ir_108"], "min": -40.0, "max":   5.0, "gamma":1.0 },
+	    "blue":  { "method": "btemp",  "chan": "wv_062",           "min": 243.0, "max": 208.0, "gamma":1.0 }
+	},
+	"dust": {
+	    "red":   { "value":"btd", "param": { "chans": ["ir_120","ir_108"], "min":  -4.0, "max":   2.0, "gamma": 1.0 },
+	    "green": { "value":"btd", "chan": ["ir_108","ir_087"], "min":   0.0, "max":  15.0, "gamma": 2.5 },
+	    "blue":  { "value":"bt",  "chan":  "ir_108",           "min": 261.0, "max": 289.0, "gamma": 1.0 }
+	},
+	"daynat": { 
+	    "red":   { "method": "refl", "param": ["chan": "ir_016", "min": 0.0, "max": 1.0, "gamma": 1.0] },
+	    "green": { "method": "refl", "param": ["chan": "vis008", "min": 0.0, "max": 1.0, "gamma": 1.0] },
+	    "blue":  { "method": "refl", "param": ["chan": "vis006", "min": 0.0, "max": 1.0, "gamma": 1.0] }
+	}
+}
