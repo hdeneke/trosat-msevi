@@ -16,14 +16,14 @@ from scipy.interpolate import RegularGridInterpolator as gridintp
 import statsmodels.api as sm
 
 import trosat.msevi as ms
-from attrdict import AttrDict
+from addict import Dict as adict
 
 cpp_anc_dir = '/home/deneke/src/cpp_v2020/ancdata'
 
 def read_json(fn):
     with open(fn,'r') as f:
         s = f.read()
-        js = json.loads(s, object_hook=AttrDict)
+        js = json.loads(s, object_hook=adict)
         return js
     return None
 
@@ -126,7 +126,7 @@ def main(time, sat, svc='rss', reg='eu', nwcsaf=True):
     
     conf = read_json(os.path.join(cpp_anc_dir,"ms15_std2hres_config.json"))
 
-    fnames = AttrDict()
+    fnames = adict()
     fnames['ms15']    = conf['ms15_fmt'].format(time=time, sat=sat, svc=svc, reg=reg)
     fnames['ms15_hr'] = conf['ms15_hr_fmt'].format(time=time, sat=sat, svc=svc, reg=reg)
     if nwcsaf:
