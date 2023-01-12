@@ -1,0 +1,13 @@
+# Exclude EMACS files
+exclude *~ \#*\#
+
+# Include the README
+include *.md
+
+# Include the license file
+include LICENSE.txt
+
+# Examples
+recursive-include examples *.py *.ipynb
+include versioneer.py
+include src/trosat/base/_version.py
