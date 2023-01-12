@@ -22,6 +22,7 @@
 
 import glob
 from setuptools import setup
+import versioneer
 
 setup(
     name         = 'trosat-msevi',
