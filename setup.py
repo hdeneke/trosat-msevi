@@ -21,11 +21,12 @@
 # -Hartwig Deneke (deneke@tropos.de)
 
 import glob
-from distutils.core import setup
+from setuptools import setup
 
 setup(
     name         = 'trosat-msevi',
-    version      = '0.9b',
+    version      = versioneer.get_version(),
+    cmdclass     = versioneer.get_cmdclass(),
     author       = 'Hartwig Deneke', 
     author_email = 'deneke@tropos.de',
     scripts      = glob.glob('bin/*'),
