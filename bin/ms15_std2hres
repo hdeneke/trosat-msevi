@@ -1,0 +1,313 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# (c) 2014-2023 Hartwig Deneke (deneke@tropos.de)
+
+import sys
+import re
+import os
+import datetime
+import argparse
+import json
+import numpy as np
+import h5py
+from scipy.signal import tukey
+from scipy.interpolate import RegularGridInterpolator as gridintp
+import statsmodels.api as sm
+
+import trosat.msevi as ms
+from attrdict import AttrDict
+
+cpp_anc_dir = '/home/deneke/src/cpp_v2020/ancdata'
+
+def read_json(fn):
+    with open(fn,'r') as f:
+        s = f.read()
+        js = json.loads(s, object_hook=AttrDict)
+        return js
+    return None
+
+def copy_attrs(src,dest):
+    for a in src.attrs:
+        dest.attrs[a] = src.attrs[a]
+    return
+
+def linear_phase_term(s,d):
+    '''
+    Return a linear phase term.
+    
+    Arguments
+    ---------
+    s : array-like
+        the shape of the linear phase term
+    d : array-like of float
+        the shift
+
+    Returns
+    -------
+    x : ndarray
+    '''
+    # get Fourier frequencies
+    fy = np.fft.fftfreq(s[-2])
+    fx = np.fft.fftfreq(s[-1])
+    return np.exp(-2.0j*np.pi*fy[:,None]*d[0])*np.exp(-2.0j*np.pi*fx[None,:]*d[1])
+
+def upsample_image( img, a=1.0, b=0.0, win=None ):
+    '''
+    Upsample image by integer factor.
+    
+    Arguments
+    ---------
+    img : ndarray
+        The image to upsample
+    f : integer factor
+        The upsampling factor
+    a : float
+        slope
+    b : offset
+        offset
+    '''
+    # convert image to float
+    im = img.astype(np.float)*a+b
+    # center image
+    if win is not None:
+        m = np.mean(win*im)/np.mean(win)
+        im = (im-m)*win
+    else:
+        m = np.mean(im)
+        im = im-m
+    # calc. 2d FFT
+    ft = np.fft.fft2(im)
+    # expand FFT by zero-padding
+    p = np.array([[ft.shape[0],ft.shape[0]],[ft.shape[1],ft.shape[1]]])
+    ft = np.fft.ifftshift(np.pad(np.fft.fftshift(ft*9),p,mode='constant'))
+    # ft *= linear_phase_term(ft.shape,(1.0,1.0))
+    # apply inverse FFT
+    # im = np.real(np.fft.ifft2(ft))
+    ## replace linear phase shift by roll...
+    im = np.real(np.fft.ifft2(ft))
+    im = np.roll(im,(1,1),axis=(0,1))
+    im = (im+m-b)/a
+    # ...convert to original dtype, and return image
+    if  np.issubdtype(img.dtype,np.integer):
+        im = np.round(im).astype(img.dtype)
+    return im
+
+def smooth_image( img, mtf, a=1.0, b=0.0, win=None ):
+    # convert image to float
+    im = img.astype(np.float)*a+b
+    # center image
+    if win is not None:
+        m = np.mean(win*im)/np.mean(win)
+        im = (im-m)*win
+    else:
+        m = np.mean(im)
+        im = im-m
+    im = np.real(np.fft.ifft2(np.fft.fft2(im)*mtf))[1::3,1::3]
+    im = upsample_image(im)
+    im = (im+m-b)/a
+    if  np.issubdtype(img.dtype,np.integer):
+        im = np.round(im).astype(img.dtype)
+    return im
+
+def get_tukey2d( s, alpha ):
+    '''
+    Return a 2d tukey window
+    '''
+    wy = tukey(s[0],alpha[0],False)[:,None]
+    wx = tukey(s[1],alpha[1],False)[None,:]
+    return wy*wx
+
+def gen_fname(fn):
+    bn = os.path.basename(fn)
+    return re.sub('(msg\d-sevi-\d{8}t\d{4}z-)(l15hdf)(-rss-eu\.c\d\.h5)',lambda m:m.group(1)+'l15hres'+'-rss-de.c2.h5',bn)
+
+def main(time, sat, svc='rss', reg='eu', nwcsaf=True):
+    
+    conf = read_json(os.path.join(cpp_anc_dir,"ms15_std2hres_config.json"))
+
+    fnames = AttrDict()
+    fnames['ms15']    = conf['ms15_fmt'].format(time=time, sat=sat, svc=svc, reg=reg)
+    fnames['ms15_hr'] = conf['ms15_hr_fmt'].format(time=time, sat=sat, svc=svc, reg=reg)
+    if nwcsaf:
+        fnames['cma']   = conf['nwcsaf_fmt'].format(time=time, prod='CMA', sat=sat.upper(), svc=svc, reg=reg)
+        fnames['ct']   = conf['nwcsaf_fmt'].format(time=time, prod='CT', sat=sat.upper(), svc=svc, reg=reg)
+        fnames['ctth']   = conf['nwcsaf_fmt'].format(time=time, prod='CTTH', sat=sat.upper(), svc=svc, reg=reg)
+
+    print("MSG-SEVIRI lev15 file : ", fnames['ms15'])
+    if nwcsaf:
+        print("MSG-SEVIRI CMA file   : ", fnames['cma'])
+        print("MSG-SEVIRI CT file    : ", fnames['ct'])
+        print("MSG-SEVIRI CTT file   : ", fnames['ctth'])
+
+    for k,v in fnames.items():
+        if k!='ms15_hr' and not os.path.exists(fnames[k]):
+            print("ERROR: cannot find file ", v)
+            sys.exit(-1)
+
+    # get source region slice, extended by edges
+    # x0 = 264  # 320-56
+    # y0 = 20   # 60-40
+    # nx = 512  # 400+2*56
+    # ny = 320  # 240+2*40
+
+    x0 = 320
+    nx = 400
+    y0 = 60
+    ny = 240
+    bx = 56
+    by = 40
+    
+    # region slice
+    sx = slice(x0,x0+nx)
+    sy = slice(y0,y0+ny)
+
+    # region slice with border
+    bsx = slice(x0-bx,x0+nx+bx)
+    bsy = slice(y0-by,y0+ny+by)
+
+    # get window function
+    #wy = tukey(ny+2*by,float(2*by)/(ny+2*by),False)
+    #wx = tukey(nx+2*bx,float(2*bx)/(nx+2*bx),False)
+    #    win = wy[:,None]*wx[None,:]
+    win_lr = get_tukey2d( (ny+2*by,nx+2*bx), (float(2*by)/(ny+2*by),float(2*bx)/(nx+2*bx)) )
+    win_hr = get_tukey2d( (3*(ny+2*by),3*(nx+2*bx)), (float(2*by)/(ny+2*by),float(2*bx)/(nx+2*bx)) )
+
+    print('Generating: {}'.format(fnames['ms15_hr']))
+    print('Adding: lev15 channels from {}'.format(fnames['ms15']))
+
+    # open source file
+    f = h5py.File(fnames['ms15'],'r')
+    src_grp  = f['l15_images']
+
+    # open destination file and create image group
+    fhres = h5py.File(fnames['ms15_hr'],'w')
+
+    ###  1. add channel datasets
+    dest_grp = fhres.create_group('l15_images')
+    for ch in conf.channels:
+        dnam = 'image_{0}'.format(ch)
+        print( 'Channel: {0}, dataset: {1}'.format(ch, dnam) )
+        if ch!='hrv':
+            (a,b) = [src_grp[dnam].attrs[a][0] for a in ['cal_slope','cal_offset']]
+            im = upsample_image(np.array(src_grp[dnam][bsy,bsx]),a,b,win_lr)
+            im = im[3*by:3*(by+ny),3*bx:3*(bx+nx)]
+            # create upsampled dataset
+            dest_grp.create_dataset(dnam,data=im,compression='gzip')
+        else:
+            # add HRV channel
+            im = src_grp[dnam][3*y0:3*(y0+ny),3*x0:3*(x0+nx)]
+            # create dataset
+            dest_grp.create_dataset(dnam,data=im,compression='gzip')
+            # add dHRV channel
+            (a,b) = [src_grp[dnam].attrs[a][0] for a in ['refl_slope','refl_offset']]
+            im = src_grp[dnam][3*(y0-by):3*(y0+ny+by),3*(x0-bx):3*(x0+nx+bx)]
+            imhrv = im.copy()
+            mtf = { ch: ms.get_mtf_filter((3*(ny+2*by),3*(nx+2*bx)),res=ms.hres/1000,sat="msg1",chan=ch) for ch in ('vis006','vis008') }
+            mtf_shrv = 2./3*mtf['vis006']+1.0/3*mtf['vis008']
+            ims = smooth_image(im,mtf_shrv,a,b,win_hr)
+            dhrv  = (im+1024-ims)[3*by:3*(by+ny),3*bx:3*(nx+bx)]
+            dest_grp.create_dataset('image_dhrv',data=dhrv,compression='gzip')
+            copy_attrs(src_grp[dnam],dest_grp['image_dhrv'])
+            # dest_grp['image_dhrv'].attrs['cal_offset']  -= dest_grp['image_dhrv'].attrs['cal_slope']*1024
+            # dest_grp['image_dhrv'].attrs['refl_offset'] -= dest_grp['image_dhrv'].attrs['refl_slope']*1024
+            # copy image attributes
+        copy_attrs(src_grp[dnam],dest_grp[dnam])
+    (a06,b06) = [src_grp['image_vis006'].attrs[a][0] for a in ['refl_slope','refl_offset']]
+    (a08,b08) = [src_grp['image_vis008'].attrs[a][0] for a in ['refl_slope','refl_offset']]
+    im06 = np.array(src_grp['image_vis006'][sy,sx])
+    im08 = np.array(src_grp['image_vis008'][sy,sx])
+    X = np.column_stack((a06*im06.flatten()+b06,a08*im08.flatten()+b08))
+    (ah,bh) = [src_grp['image_hrv'].attrs[a][0] for a in ['refl_slope','refl_offset']]
+    Y = (ah*ims[1::3,1::3]+bh)[by:-by,bx:-bx].flatten()
+    fit = sm.OLS(Y,X).fit()
+    dest_grp['image_dhrv'].attrs['a'] = fit.params[0]
+    dest_grp['image_dhrv'].attrs['b'] = fit.params[1]
+    copy_attrs(f,fhres)
+    src_grp  = f['meta']
+
+    ###  2. add meta-info  datasets
+    dest_grp = fhres.create_group('meta')
+    src_grp.copy('channel_info',dest_grp)
+    src_grp.copy('coverage',dest_grp)
+    # TODO check hardcoded values
+    dest_grp['coverage'][0] = ('vis_ir', 3257, 3496, 1637, 2036)
+    dest_grp['coverage'][1] = ('hrv', 9768, 10487, 4908, 6107)
+
+    ###  3. add geometry datasets
+    src_grp  = f['geometry']
+    dest_grp = fhres.create_group('geometry')
+    for dnam in ['satellite_zenith','satellite_azimuth', 'sun_zenith', 'sun_azimuth']:
+        x = src_grp[dnam][y0:(y0+ny),x0:(x0+nx)]
+        (a,b) = [src_grp[dnam].attrs[a][0] for a in ['scale_factor','add_offset']]
+        y = x.astype(np.float)*a+b
+        yold = np.arange(ny).astype(np.float)
+        ynew = np.arange(ny*3).astype(np.float)/3-1./3
+        xold = np.arange(nx).astype(np.float)
+        xnew = np.arange(nx*3).astype(np.float)/3-1./3
+        gi = gridintp((yold,xold),y,method='linear',bounds_error=False,fill_value=None)
+        gx,gy = np.meshgrid(xnew,ynew)
+        z = gi(np.stack((gy.flatten(),gx.flatten()),axis=-1)).reshape((720,1200))
+        z = np.round(z/0.01).astype(np.int16)
+        dest_grp.create_dataset(dnam,data=z,compression='gzip')
+        copy_attrs(src_grp[dnam],dest_grp[dnam])
+    f.close()
+
+    ###  4. add NWCSAF cloud product datasets
+    if nwcsaf:
+        print( 'Adding: NWCSAF cloud products' )
+        # add group
+        dest_grp = fhres.create_group('l2_nwcsaf')
+        # cloud mask
+        print( 'CMA from  : ',fnames['cma'] )
+        f = h5py.File(fnames['cma'],'r')
+        cma = np.array(f['cma'][y0:y0+ny,x0:x0+nx])
+        cma = np.repeat(np.repeat(cma,3,axis=1),3,axis=0)
+        dest_grp.create_dataset('cma',data=cma,compression='gzip')
+        copy_attrs(f['cma'],dest_grp['cma'])
+        f.close()
+        # cloud type
+        print( 'CT from   : ',fnames['cma'] )
+        f = h5py.File(fnames['ct'],'r')
+        ct = np.array(f['ct'][y0:y0+ny,x0:x0+nx])
+        ct = np.repeat(np.repeat(ct,3,axis=1),3,axis=0)
+        dest_grp.create_dataset('ct',data=ct,compression='gzip')
+        copy_attrs(f['ct'],dest_grp['ct'])
+        f.close()
+        # cloud top height/temperature/pressure
+        print( 'CTTH from : ',fnames['ctth'] )
+        f = h5py.File(fnames['ctth'],'r')
+        varmap = {'ctth_pres':'ctp','ctth_tempe':'ctt','ctth_alti': 'cth'}
+        for v in ['ctth_pres','ctth_alti','ctth_tempe']:
+            x = np.array(f[v][y0:y0+ny,x0:x0+nx])
+            x = np.repeat(np.repeat(x,3,axis=1),3,axis=0)
+            dest_grp.create_dataset(varmap[v],data=x,compression='gzip')
+            copy_attrs(f[v],dest_grp[varmap[v]])
+        f.close()
+    fhres.close()
+    print( 'SUCCESS: generated ', os.path.basename(fnames['ms15_hr']) )
+    return 0
+
+def parse_args():
+    '''
+    Parse command line arguments
+    '''
+    parser = argparse.ArgumentParser( description = 'Generate CPP input file for HRV processing' )
+    parser.add_argument( '-t', '--time', type=lambda ts: datetime.datetime.strptime(ts,'%Y%m%dT%H%MZ'), required=True, help=r'time string, format=%%Y%%m%%dT%%H%%MZ' )
+    parser.add_argument( '-s', '--satellite', type=str, required=True, choices=['msg1','msg2','msg3','msg4'], help='the MSG satellite')
+    parser.add_argument( '-S', '--service', type=str, default='rss', required=False, choices=['pzs','rss'], help='the satellite service' )
+    parser.add_argument( '-r', '--region', type=str, default='eu', required=False, help='the image region')
+    parser.add_argument( '-N', '--nwcsaf', action='store_true', help='add NWCSAF lev2 cloud properties')
+    return parser.parse_args()
+
+if __name__ == "__main__":
+
+    args = parse_args()
+
+    print("Region    : ", args.region )
+    print("Satellite : ", args.satellite )
+    print("Service   : ", args.service )
+    print("Time      : ", args.time )
+    print("NWCSAF    : ", args.nwcsaf )
+
+    sys.exit( main(args.time, sat=args.satellite, svc=args.service, reg=args.region, nwcsaf=args.nwcsaf) )
