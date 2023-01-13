@@ -1,0 +1,64 @@
+{
+	/* global attributes */
+    "attributes" : {
+		/* CF attributes */
+        "conventions" : "CF-1.9",
+    },
+    "dimensions": {
+		"y"       :   720,
+		"x"       :  1200,
+		"pcls"    :     4
+    },
+    "variables": {
+		"refl_csc_hrv" : {
+			"shape" : ["y","x"],
+			"type" : "u2",
+			"attributes": {
+				"long_name"     :   "16-day clear-sky reflectance composite for the HRV channel",
+				"units"         :   "-",
+				"scale_factor"  :  0.01, 
+				"add_offset"    :  0.00, 
+				"_FillValue"    : 65535, 
+			}
+		},
+		"pmask" : {
+			"shape" : ["y","x"],
+			"type" : "u1",
+			"attributes": {
+				"long_name"     :   "Pixel class map",
+				"units"         :   "-",
+				"_FillValue"    : 255, 
+			}
+		},
+		"thresh" : {
+			"shape" : "pcls", 
+			"type" : "f4",
+			"attributes" : {
+				"long_name"     :   "per-class cloud detection threshold"
+			}
+		},
+		"cfc_sr" : {
+			"shape" : ["y","x"],
+			"type" : "u2",
+			"attributes": {
+				"long_name"     :   "cloud fraction standard resolution",
+				"units"         :   "-",
+				"scale_factor"  :  0.01, 
+				"add_offset"    :  0.00, 
+				"_FillValue"    : 65535, 
+			}
+		},
+		"cfc_hrv" : {
+			"shape" : ["y","x"],
+			"type" : "u2",
+			"attributes": {
+				"long_name"     :   "cloud fraction HRV",
+				"units"         :   "-",
+				"scale_factor"  :  0.01, 
+				"add_offset"    :  0.00, 
+				"_FillValue"    : 65535, 
+			}
+		}
+    }
+}
+
